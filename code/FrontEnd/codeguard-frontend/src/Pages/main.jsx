@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import '../App.css';
 import axios from 'axios';
+import SocketIO from './socketIo';
 
 function App() {
   const [repoUrl, setRepoUrl] = useState('');
@@ -36,8 +37,7 @@ function App() {
       const response = await axios.post('http://127.0.0.1:5000/perform_actions', formData);
   
       if (response.status === 200) {
-        const logs = response.data.result.split('\n');
-        setScanningLogs(logs);
+        // No need to handle the result directly
       } else {
         setScanningLogs((prevLogs) => [...prevLogs, 'Error scanning repository. Please try again.']);
       }
@@ -49,7 +49,7 @@ function App() {
       setScanningLogs((prevLogs) => [...prevLogs, 'Error scanning repository. Please try again.']);
     }
   };
-
+  
   const handleClearForm = () => {
     setRepoUrl('');
     setAction('');
@@ -61,7 +61,7 @@ function App() {
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1>Perform Actions</h1>
+        <h1>CodeGuard</h1>
       </header>
       <main>
         <div className="input-section">
@@ -85,7 +85,7 @@ function App() {
             <option value="5">Check All Buckets</option>
             <option value="6">Perform All Actions</option>
           </select>
-          {action === '3' || action === '4' ? ( // Render Snyk Token input if action is code scanning or dependency scanning
+          {action === '3' || action === '4' || action === '6'  ? ( // Render Snyk Token input if action is code scanning or dependency scanning
             <input
               type="text"
               placeholder="Snyk Token"
@@ -97,10 +97,10 @@ function App() {
         </div>
         <div className="scanning-section">
         <div className="log-window">
-        {[...scanningLogs.map(log => log.split('\n'))].flat().map((log, index) => (
-            <div key={index} className="log-message">{log}</div>
-          ))}
-        </div>
+            {scanningLogs.map((log, index) => (
+              <div key={index} className="log-message">{log}</div>
+            ))}
+          </div>
           <button onClick={handleSubmit} className="submit-button" disabled={scanningInProgress}>
             {scanningInProgress ? 'Scanning...' : 'Submit'}
           </button>
@@ -109,6 +109,7 @@ function App() {
           </button>
         </div>
       </main>
+      <SocketIO setScanningLogs={setScanningLogs} />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import MainPage from './Pages/main'
 import SocketIO from './Pages/socketIo'
 
 function App() {
-  const [scanningLogs, setScanningLogs] = useState('');
+  const [scanningLogs, setScanningLogs] = useState([]);
 
   return (
     <>

@@ -15,7 +15,12 @@ const SocketIO = ({ setScanningLogs }) => {
 
     socket.on('output', (data) => {
       console.log('Received output:', data);
-      setScanningLogs((prevLogs) => [...prevLogs, data]);
+      // Split the data by newline and update the state with each line separately
+      data.split('\n').forEach((log) => {
+        if (log.trim() !== '') {
+          setScanningLogs((prevLogs) => [...prevLogs, log]);
+        }
+      });
     });
 
     return () => {
