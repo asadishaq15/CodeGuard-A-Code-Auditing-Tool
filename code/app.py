@@ -12,11 +12,12 @@ from pprint import pprint
 from requests.exceptions import RequestException
 from urllib3.exceptions import InsecureRequestWarning
 from flask_socketio import SocketIO, emit, join_room, leave_room
+
 # Suppress SSL certificate verification warnings
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_secret_key'
+app.config['SECRET_KEY'] = 'codeGuard'
 socketio = SocketIO(app, cors_allowed_origins="http://localhost:5173")
 CORS(app)
 @socketio.on('connect')
@@ -43,20 +44,26 @@ def perform_actions():
         directory = clone_repository(repo_url)
         if directory:
             if action == '1':
+                send_output("Searching for package.json files...")
                 result = search_package_json(directory)
             elif action == '2':
+                send_output("Searching for package.json files and checking for dependency confusion...")
                 result = search_package_json(directory, perform_dependency_confusion_check=True)
             elif action == '3':
+                send_output("Performing code scanning...")
                 result = perform_code_scanning(snyk_token)  # Pass the Snyk token to the function
             elif action == '4':
                 result = perform_dependency_scanning(repo_url, snyk_token)  # Pass the Snyk token to the function
             elif action == '5':
+                send_output("Checking all buckets...")
                 result = check_all_buckets(directory)
             elif action == '6':
+                send_output("Performing all actions...")
                 result = perform_all_actions(directory, snyk_token)  # Pass the Snyk token to the function
             else:
                 result = "Invalid action selected."
-            return jsonify({'result': str(result)}), 200
+
+            return jsonify({'result': result}), 200  # Return the result as a JSON response with a 200 OK status code
         else:
             return jsonify({'error': 'Failed to clone repository.'}), 400
     else:
@@ -66,27 +73,32 @@ def perform_actions():
 def clone_repository(repo_url):
     response = requests.get(repo_url)
     if response.status_code == 200:
-        print("Downloading repo...")
+        send_output("Repository URL is accessible. Downloading repository...")
         os.system(f"git clone {repo_url}")
         repo_name = os.path.basename(repo_url.rstrip("/"))
-        print(repo_name)
+        send_output(f"Repository cloned: {repo_name}")
         try:
             os.chdir(repo_name)
+            send_output(f"Navigated to the cloned repository: {os.getcwd()}")
             return os.getcwd()
         except FileNotFoundError:
-            print("Failed to navigate to the cloned repository.")
+            send_output("Failed to navigate to the cloned repository.")
             return None
     else:
+        send_output("Repository URL is not accessible. Requesting personal access token...")
         pat = input("Enter GitHub personal access token: ")
         repo_url = repo_url.replace("https://", "", 1)
         cloned_url = f"https://{pat}@{repo_url.split('.git/')[0]}"
+        send_output("Cloning repository with personal access token...")
         os.system(f"git clone {cloned_url}")
         repo_name = os.path.basename(repo_url.rstrip("/"))
-        print(repo_name)
+        send_output(f"Repository cloned: {repo_name}")
         try:
             os.chdir(repo_name)
+            send_output(f"Navigated to the cloned repository: {os.getcwd()}")
             return os.getcwd()
         except FileNotFoundError:
+            send_output("Failed to navigate to the cloned repository.")
             print("Failed to navigate to the cloned repository.")
             return None
 
@@ -99,11 +111,11 @@ def search_package_json(directory, perform_dependency_confusion_check=False):
             if file == "package.json":
                 file_path = os.path.join(root, file)
                 package_json_files.append(file_path)
+                send_output(f"Found package.json at: {file_path}")
 
     with ThreadPoolExecutor() as executor:
         futures = []
         for file_path in package_json_files:
-            print(f"Found package.json at: {file_path}")
             futures.append(executor.submit(process_package_json, file_path, perform_dependency_confusion_check))
 
         for future in as_completed(futures):
@@ -112,7 +124,7 @@ def search_package_json(directory, perform_dependency_confusion_check=False):
                 vulnerable_packages = True
 
     if perform_dependency_confusion_check and not vulnerable_packages:
-        print("None of the packages are vulnerable to dependency confusion.")
+        send_output("None of the packages are vulnerable to dependency confusion.")
 
 def process_package_json(file_path, perform_dependency_confusion_check=False):
     with open(file_path) as json_file:
@@ -134,15 +146,15 @@ def process_package_json(file_path, perform_dependency_confusion_check=False):
                         return True
 
             if not perform_dependency_confusion_check:
-                print("Package Dependencies:")
+                send_output("Package Dependencies:")
                 for package_name, domains in email_domains.items():
-                    print(f"{package_name}:")
+                    send_output(f"{package_name}:")
                     for domain in domains:
                         availability = check_domain_availability(domain)
-                        print(f"- {domain}: {availability}")
+                        send_output(f"- {domain}: {availability}")
 
         except json.JSONDecodeError:
-            print(f"Error: Invalid JSON format in {file_path}")
+            send_output(f"Error: Invalid JSON format in {file_path}")
 
     return False
 
@@ -161,12 +173,12 @@ def process_package(package_name, email_domains, perform_dependency_confusion_ch
                     email_domains[package_name] = set()
                 email_domains[package_name].add(domain)
     elif perform_dependency_confusion_check:
-        print(f"Checking for dependency confusion for {package_name}:")
+        send_output(f"Checking for dependency confusion for {package_name}:")
         if check_dependency_confusion(package_name):
-            print(f"Warning: {package_name} is vulnerable to dependency confusion!")
+            send_output(f"Warning: {package_name} is vulnerable to dependency confusion!")
             return True
         else:
-            print(f"{package_name} is not vulnerable to dependency confusion.")
+            send_output(f"{package_name} is not vulnerable to dependency confusion.")
 
     return False
 
@@ -184,10 +196,13 @@ def check_domain_availability(domain):
         result = subprocess.check_output(command, stderr=subprocess.DEVNULL, universal_newlines=True)
         response = json.loads(result)
         if response.get("available") is True:
-            return "Available"
+            availability = "Available"
         else:
-            return "Domain Taken"
+            availability = "Domain Taken"
+        send_output(f"Domain availability: {domain} - {availability}")
+        return availability
     except (subprocess.CalledProcessError, json.JSONDecodeError):
+        send_output(f"Availability check failed for domain: {domain}")
         return "Availability check failed"
     
 def perform_code_scanning(snyk_token):
@@ -195,14 +210,17 @@ def perform_code_scanning(snyk_token):
     snyk_installed = not os.system("snyk --version")
     # Install snyk if not already installed
     if not snyk_installed:
-        print("snyk is not installed. Installing snyk...")
+        send_output("snyk is not installed. Installing snyk...")
         os.system("npm install -g snyk")
+        send_output("snyk installed successfully.")
 
     # Authenticate with Snyk using the token
+    send_output("Authenticating with Snyk...")
     auth_command = f"snyk auth {snyk_token}"
     subprocess.run(auth_command, shell=True)
+    send_output("Authentication with Snyk successful.")
 
-    print("Performing code scanning...")
+    send_output("Performing code scanning...")
     code_scan_command = "snyk code test --all-projects  --show-vulnerable-paths=all"
     try:
         code_scan_output = subprocess.check_output(
@@ -212,27 +230,31 @@ def perform_code_scanning(snyk_token):
         )
         # Check if the output is empty
         if code_scan_output.strip():
-            # Print code scanning raw output
-            print("Code scanning results:")
-            print(code_scan_output)
+            send_output("Code scanning results:")
+            for line in code_scan_output.split('\n'):
+                send_output(line)
         else:
-            print("Code scanning did not produce any output.")
+            send_output("Code scanning did not produce any output.")
     except subprocess.CalledProcessError as e:
-        print("Code scanning failed with the following error:")
-        print(e.output)
+        send_output("Code scanning failed with the following error:")
+        for line in e.output.split('\n'):
+            send_output(line)
 
 def perform_dependency_scanning(repo_url, snyk_token):
-    print("Performing dependency scanning...")
+    send_output("Performing dependency scanning...")
     # Check if snyk is installed
     snyk_installed = not os.system("snyk --version")
     # Install snyk if not already installed
     if not snyk_installed:
-        print("snyk is not installed. Installing snyk...")
+        send_output("snyk is not installed. Installing snyk...")
         os.system("npm install -g snyk")
+        send_output("snyk installed successfully.")
 
     # Authenticate with Snyk using the token
+    send_output("Authenticating with Snyk...")
     auth_command = f"snyk auth {snyk_token}"
     subprocess.run(auth_command, shell=True)
+    send_output("Authentication with Snyk successful.")
 
     dependency_scan_command = "snyk test --dev"
     try:
@@ -246,17 +268,20 @@ def perform_dependency_scanning(repo_url, snyk_token):
             try:
                 dependency_scan_results = json.loads(dependency_scan_output)
                 # Print dependency scanning results
-                print("Dependency scanning results:")
-                pprint(dependency_scan_results)
+                send_output("Dependency scanning results:")
+                for line in json.dumps(dependency_scan_results, indent=2).split('\n'):
+                    send_output(line)
             except json.JSONDecodeError as e:
-                print("Dependency scanning failed. Invalid JSON output.")
-                print("Error:", e)
-                print("Raw output:")
-                print(dependency_scan_output)
+                send_output("Dependency scanning failed. Invalid JSON output.")
+                send_output("Error:", e)
+                send_output("Raw output:")
+                for line in dependency_scan_output.split('\n'):
+                    send_output(line)
         else:
-            print("Dependency scanning did not produce any output.")
+            send_output("Dependency scanning did not produce any output.")
     except subprocess.CalledProcessError as e:
-        print(e.output)
+        for line in e.output.split('\n'):
+            send_output(line)
 
 def check_all_buckets(directory):
     # Define the bucket name patterns
@@ -269,7 +294,7 @@ def check_all_buckets(directory):
     # Function to search for bucket references in a file
     def search_buckets_in_file(file_path):
         if not os.path.isfile(file_path):
-            print(f"File not found: {file_path}")
+            send_output(f"File not found: {file_path}")
             return {}
 
         buckets_found = {}
@@ -288,6 +313,7 @@ def check_all_buckets(directory):
         for root, _, files in os.walk(directory):
             for file in files:
                 file_path = os.path.join(root, file)
+                send_output(f"Searching for buckets in file: {file_path}")
                 file_buckets_found = search_buckets_in_file(file_path)
                 for bucket_type, buckets in file_buckets_found.items():
                     buckets_found.setdefault(bucket_type, []).extend(
@@ -310,9 +336,9 @@ def check_all_buckets(directory):
             # Retry with a different URL
             url = f"https://{bucket_name}.s3.amazonaws.com/x"
             response_code = get_response_code(url)
-            print(f"{bucket_reference} found in this file {file_path}, {response_code} Response code.")
+            send_output(f"{bucket_reference} found in this file {file_path}, {response_code} Response code.")
         else:
-            print(f"{bucket_reference} found in this file {file_path}, {response_code} Response code.")
+            send_output(f"{bucket_reference} found in this file {file_path}, {response_code} Response code.")
 
     # Function to check Azure bucket
     def check_azure_bucket(bucket_reference, file_path):
@@ -324,7 +350,7 @@ def check_all_buckets(directory):
         # Check the bucket availability
         url = f"https://{bucket_name}.blob.core.windows.net/x"
         response_code = get_response_code(url)
-        print(f"{bucket_reference} found in this file {file_path}, {response_code} Response code.")
+        send_output(f"{bucket_reference} found in this file {file_path}, {response_code} Response code.")
 
     # Function to check Google bucket
     def check_google_bucket(bucket_reference, file_path):
@@ -336,7 +362,7 @@ def check_all_buckets(directory):
         # Check the bucket availability
         url = f"https://storage.googleapis.com/{bucket_name}"
         response_code = get_response_code(url)
-        print(f"{bucket_reference} found in this file {file_path}, {response_code} Response code.")
+        send_output(f"{bucket_reference} found in this file {file_path}, {response_code} Response code.")
 
     # Function to extract bucket name
     def extract_bucket_name(bucket_reference, bucket_type):
@@ -365,7 +391,7 @@ def check_all_buckets(directory):
             if match:
                 return match.group(1)
 
-        print(f"Unable to extract bucket name from: {bucket_reference}")
+        send_output(f"Unable to extract bucket name from: {bucket_reference}")
         return None
 
     # Function to get response code for a given URL
@@ -411,7 +437,6 @@ def perform_all_actions(directory, snyk_token):
 
     for line in output.split('\n'):
         socketio.emit('output', line)
-    return {'result': output}
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
